@@ -1,10 +1,11 @@
 "use strict";
 
 class Cpu {
-    constructor(bus, stack_pointer) {
+    constructor(bus, stack_pointer, embedded = false) {
         this._bus = bus;
         this._initial_stack_pointer = stack_pointer;
-        this._registers_array = new ArrayBuffer(32*4);
+        this._registers_amount = embedded ? 16 : 32;
+        this._registers_array = new ArrayBuffer(this._registers_amount*4);
         this._registers_view = new DataView(this._registers_array);
         this._pc = 0;
 
@@ -32,11 +33,12 @@ class Cpu {
         };
 
         this._load_ops = {
-            LB:  0x0, // rd, xxx, rs1, imm[11:0]
-            LH:  0x1, // rd, xxx, rs1, imm[11:0]
-            LW:  0x2, // rd, xxx, rs1, imm[11:0]
-            LBU: 0x4, // rd, xxx, rs1, imm[11:0]
-            LHU: 0x5, // rd, xxx, rs1, imm[11:0]
+            LB:  0x0, // lb rd, rs1, imm
+            LH:  0x1, // lh rd, rs1, imm
+            LW:  0x2, // lw rd, rs1, imm
+            LBU: 0x4, // lbu rd, rs1, imm
+            LHU: 0x5, // lhu rd, rs1, imm
+            LWU: 0x6, // lwu rd, rs1, imm
         };
 
         this._store_ops = {
@@ -66,11 +68,16 @@ class Cpu {
             OR:     0x6,
             AND:    0x7
         };
+
+        this._register_ops_addsub = {
+            ADD: 0x00,
+            SUB: 0x20,
+        };
     }
 
     _set_register(register, signed, value) {
         if (register === 0) return; // Register 0 is hardwired to be zero
-        if (register >= 32) throw new Error("Attempted write to invalid register " + register);
+        if (register >= this._registers_amount) throw new Error("Attempted write to invalid register " + register);
         if (signed) {
             this._registers_view.setInt32(register * 4, value, true);
         } else {
@@ -80,7 +87,7 @@ class Cpu {
 
     _get_register(register, signed) {
         if (register === 0) return 0; // Register 0 is hardwired to be zero
-        if (register >= 32) throw new Error("Attempted read from invalid register " + register);
+        if (register >= this._registers_amount) throw new Error("Attempted read from invalid register " + register);
         if (signed) {
             return this._registers_view.getInt32(register * 4, true);
         } else {
@@ -143,7 +150,7 @@ class Cpu {
     }
 
     _imm_U(instruction, signed) {
-        let value = (instruction & 0xFFFFF999);
+        let value = (instruction & 0xFFFFF000);
         if (signed) {
             return new Int32Array([value])[0];
         } else {
@@ -176,12 +183,18 @@ class Cpu {
 
     // CPU instructions
 
-    _execute_op_lui(instruction) {
-        throw new Error("not implemented");
+    _execute_op_lui(instruction) { // Load upper immediate
+        let target_register = this._rd(instruction);
+        let immediate_value = this._imm_U(instruction, false);
+        this._set_register(target_register, false, immediate_value);
+        console.log("lui x" + target_register + ", 0x" + (immediate_value >>> 12).toString(16));
     }
 
     _execute_op_auipc(instruction) {
-        throw new Error("not implemented");
+        let target_register = this._rd(instruction);
+        let immediate_value = this._imm_U(instruction, true);
+        this._set_register(target_register, false, this._pc + immediate_value - 4);
+        console.log("auipc x" + target_register + ", " + immediate_value);
     }
 
     _execute_op_jal(instruction) {
@@ -196,7 +209,16 @@ class Cpu {
     }
 
     _execute_op_jalr(instruction) {
-        throw new Error("not implemented");
+        let target_register = this._rd(instruction);
+        let rs1 = this.rs1(instruction);
+        let register_value = this._get_register(rs1, true);
+        let immediate_value = this._imm_J(instruction, true);
+        this._set_register(target_register, false, this._pc);
+        this._pc = register_value + immediate_value & 0xFFFFFFFE;
+        if (this._pc & 0x03) {
+            throw new Error("Address misaligned");
+        }
+        console.log("jalr x" + target_register + ", " + immediate_value);
     }
 
     _execute_op_branch(instruction) {
@@ -214,7 +236,7 @@ class Cpu {
 
         let result = false;
 
-        switch (funct3) {
+        switch(funct3) {
             case this._branch_ops.BEQ: // Branch when equal
                 result = (value1u === value2u);
                 console.log("beq x" + rs1 + ", x" + rs2 + ", " + target_offset + " " + (result ? "Y" : "N"));
@@ -253,15 +275,60 @@ class Cpu {
     }
 
     _execute_op_load(instruction) {
-        throw new Error("Not implemented");
+        let funct3 = (instruction >> 12) & 0x07;
+        let target_register = this._rd(instruction);
+        let source_register = this._rs1(instruction);
+        let immediate_value = this._imm_I(instruction, true);
+        let address = this._get_register(source_register, false) + immediate_value;
+        switch(funct3) {
+            case this._load_ops.LB:
+                this._set_register(target_register, true, this._bus.load(address, 8));
+                console.log("lb x" + target_register + ", x" + source_register + ", " + immediate_value);
+                break;
+            case this._load_ops.LH:
+                this._set_register(target_register, true, this._bus.load(address, 16));
+                console.log("lh x" + target_register + ", x" + source_register + ", " + immediate_value);
+                break;
+            case this._load_ops.LW:
+                this._set_register(target_register, true, this._bus.load(address, 32));
+                console.log("lw x" + target_register + ", x" + source_register + ", " + immediate_value);
+                break;
+            case this._load_ops.LBU:
+                this._set_register(target_register, false, this._bus.load(address, 8));
+                console.log("lbu x" + target_register + ", x" + source_register + ", " + immediate_value);
+                break;
+            case this._load_ops.LHU:
+                this._set_register(target_register, false, this._bus.load(address, 16));
+                console.log("lhu x" + target_register + ", x" + source_register + ", " + immediate_value);
+                break;
+            case this._load_ops.LWU:
+                this._set_register(target_register, false, this._bus.load(address, 32));
+                console.log("lwu x" + target_register + ", x" + source_register + ", " + immediate_value);
+                break;
+            default:
+               throw new Error("Invalid load instruction. Funct3: " + funct3);
+        }
     }
 
     _execute_op_store(instruction) {
-        throw new Error("Not implemented");
-    }
-
-    _execute_op_load(instruction) {
-        throw new Error("Not implemented");
+        let funct3 = (instruction >> 12) & 0x07;
+        let register_value = this._get_register(this._rs1(instruction), false);
+        let immediate_value = this._imm_S(instruction, true);
+        let address = register_value + immediate_value;
+        let value = this._get_register(this._rs2(instruction), false);
+        switch(funct3) {
+            case this._store_ops.SB:
+                this._bus.store(address, 8, value);
+                break;
+            case this._store_ops.SH:
+                this._bus.store(address, 16, value);
+                break;
+            case this._store_ops.SW:
+                this._bus.store(address, 32, value);
+                break;
+            default:
+                throw new Error("Invalid store instruction. Funct3: " + funct3);
+        }
     }
 
     _execute_op_immediate(instruction) {
@@ -270,8 +337,9 @@ class Cpu {
         let source_register = this._rs1(instruction);
         let immediate_value_signed = this._imm_I(instruction, true);
         let immediate_value_unsigned = this._imm_I(instruction, false);
+        let shift_amount = this._shamt(instruction);
 
-        switch (funct3) {
+        switch(funct3) {
             case this._immediate_ops.ADDI: // Add immediate
                 this._set_register(target_register, true, this._get_register(source_register, true) + immediate_value_signed);
                 console.log("addi x" + target_register + ", x" + source_register + ", " + immediate_value_signed);
@@ -285,77 +353,103 @@ class Cpu {
                 console.log("sltiu x" + target_register + ", x" + source_register + ", " + immediate_value_unsigned);
                 break;
             case this._immediate_ops.XORI:
-                this._execute_op_i_xori(instruction);
+                this._set_register(target_register, false, this._get_register(source_register, false) ^ immediate_value_unsigned);
+                console.log("xori x" + target_register + ", x" + source_register + ", " + immediate_value_unsigned);
                 break;
             case this._immediate_ops.ORI:
-                this._execute_op_i_ori(instruction);
+                this._set_register(target_register, false, (this._get_register(source_register, false) | immediate_value_unsigned) ? 1 : 0);
+                console.log("ori x" + target_register + ", x" + source_register + ", " + immediate_value_unsigned);
                 break;
             case this._immediate_ops.ANDI:
-                this._execute_op_i_andi(instruction);
+                this._set_register(target_register, false, (this._get_register(source_register, false) & immediate_value_unsigned) ? 1 : 0);
+                console.log("andi x" + target_register + ", x" + source_register + ", " + immediate_value_unsigned);
                 break;
             case this._immediate_ops.SLLI: // Shift left logical immediate
-                this._execute_op_i_slli(instruction);
+                this._set_register(target_register, true, this._get_register(source_register, true) << shift_amount);
+                console.log("slli x" + target_register + ", x" + source_register + ", " + shift_amount);
                 break;
             case this._immediate_ops.SRI:
                 let funct7 = (instruction >> 25) & 0x7f;
-                switch (funct7) {
+                switch(funct7) {
                     case this._immediate_ops.SRI_SRLI:
-                        this._execute_op_i_srli(instruction);
+                        this._set_register(target_register, true, this._get_register(source_register, true) >> shift_amount);
+                        console.log("srli x" + target_register + ", x" + source_register + ", " + shift_amount);
                         break;
                     case this._immediate_ops.SRI_SRAI:
-                        this._execute_op_i_srai(instruction);
+                        this._set_register(target_register, true, this._get_register(source_register, true) >> shift_amount);
+                        console.log("srai x" + target_register + ", x" + source_register + ", " + shift_amount);
                         break;
                 }
             break;
         }
     }
 
-    _execute_op_i_slli(instruction) {
+    _execute_op_register(instruction) {
+        let funct3 = (instruction >> 12) & 0x07;
         let target_register = this._rd(instruction);
-        let source_register = this._rs1(instruction);
-        let shift_amount = this._shamt(instruction);
-        this._set_register(target_register, true, this._get_register(source_register, true) << shift_amount);
-        console.log("slli x" + target_register + ", x" + source_register + ", " + shift_amount);
+        let rs1 = this._rs1(instruction);
+        let rs2 = this._rs2(instruction);
+        let value1_signed = this._get_register(rs1, true);
+        let value2_signed = this._get_register(rs2, true);
+        let value1_unsigned = this._get_register(rs1, false);
+        let value2_unsigned = this._get_register(rs2, false);
+
+        switch(funct3) {
+            case this._register_ops.ADDSUB:
+                let funct7 = (instruction >> 25) & 0x7f;
+                switch(funct7) {
+                    case this._register_ops_addsub.ADD: // Add
+                        this._set_register(target_register, true, value1_signed + value2_signed);
+                        console.log("add x" + target_register + ", x" + rs1 + ", x" + rs2);
+                        break;
+                    case this._register_ops_addsub.SUB: // Subtract
+                        this._set_register(target_register, true, value1_signed - value2_signed);
+                        console.log("sub x" + target_register + ", x" + rs1 + ", x" + rs2);
+                        break;
+                    default:
+                        throw new Error("Invalid addsub register instruction. Funct7: " + funct7);
+                        break;
+                }
+                break;
+            case this._register_ops.SLL: // Shift left logical
+                this._set_register(target_register, false, value1_unsigned << value2_unsigned);
+                console.log("sll x" + target_register + ", x" + rs1 + ", x" + rs2);
+                break;
+            case this._register_ops.SLT: // Set less than
+                this._set_register(target_register, false, (value1_signed < value2_signed) ? 1 : 0);
+                console.log("slt x" + target_register + ", x" + rs1 + ", x" + rs2);
+                break;
+            case this._register_ops.SLTU: // Set less than unsigned
+                this._set_register(target_register, false, (value1_unsigned < value2_unsigned) ? 1 : 0);
+                console.log("sltu x" + target_register + ", x" + rs1 + ", x" + rs2);
+                break;
+            case this._register_ops.XOR: // Xor
+                this._set_register(target_register, false, value1_unsigned ^ value2_unsigned);
+                console.log("xor x" + target_register + ", x" + rs1 + ", x" + rs2);
+                break;
+            case this._register_ops.SR: // Shift right logical
+                this._set_register(target_register, false, value1_unsigned >> value2_unsigned);
+                console.log("sr x" + target_register + ", x" + rs1 + ", x" + rs2);
+                break;
+            case this._register_ops.OR: // Shift right arithmetic
+                this._set_register(target_register, true, value1_signed >> value2_signed);
+                console.log("or x" + target_register + ", x" + rs1 + ", x" + rs2);
+                break;
+            case this._register_ops.AND: // And
+                this._set_register(target_register, false, value1_unsigned & value2_unsigned);
+                console.log("xor x" + target_register + ", x" + rs1 + ", x" + rs2);
+                break;
+            default:
+                throw new Error("Invalid register instruction. Funct3: " + funct3);
+        }
     }
 
-    _execute_op_i_xori(instruction) {
-        let target_register = this._rd(instruction);
-        let source_register = this._rs1(instruction);
-        let immediate_value = this._imm_I(instruction);
-        this._set_register(target_register, true, this._get_register(source_register, true) ^ immediate_value);
-        console.log("xori x" + target_register + ", x" + source_register + ", " + immediate_value);
+    _execute_op_fence(instruction) {
+        throw new Error("Not implemented");
     }
 
-    _execute_op_i_srli(instruction) {
-        let target_register = this._rd(instruction);
-        let source_register = this._rs1(instruction);
-        let shift_amount = this._shamt(instruction);
-        this._set_register(target_register, true, this._get_register(source_register, true) >> shift_amount);
-        console.log("srli x" + target_register + ", x" + source_register + ", " + shift_amount);
-    }
-
-    _execute_op_i_srai(instruction) {
-        let target_register = this._rd(instruction);
-        let source_register = this._rs1(instruction);
-        let shift_amount = this._shamt(instruction);
-        this._set_register(target_register, true, this._get_register(source_register, true) >> shift_amount);
-        console.log("srai x" + target_register + ", x" + source_register + ", " + shift_amount);
-    }
-
-    _execute_op_i_ori(instruction) {
-        let target_register = this._rd(instruction);
-        let source_register = this._rs1(instruction);
-        let immediate_value = this._imm_I(instruction);
-        this._set_register(target_register, false, (this._get_register(source_register, false) | immediate_value) ? 1 : 0);
-        console.log("ori x" + target_register + ", x" + source_register + ", " + immediate_value);
-    }
-
-    _execute_op_i_andi(instruction) {
-        let target_register = this._rd(instruction);
-        let source_register = this._rs1(instruction);
-        let immediate_value = this._imm_I(instruction);
-        this._set_register(target_register, false, (this._get_register(source_register, false) & immediate_value) ? 1 : 0);
-        console.log("andi x" + target_register + ", x" + source_register + ", " + immediate_value);
+    _execute_op_service(instruction) {
+        throw new Error("Not implemented");
     }
 
     ///...
@@ -389,13 +483,13 @@ class Cpu {
                 this._execute_op_immediate(instruction);
             break;
             case this._opcodes.REGISTER:
-
+                this._execute_op_register(instruction);
                 break;
             case this._opcodes.FENCE:
-
+                this._execute_op_fence(instruction);
                 break;
             case this._opcodes.SERVICE:
-
+                this._execute_op_service(instruction);
                 break;
             default:
                 throw new Error("Invalid instruction. Unrecognized opcode 0x" + opcode.toString(16));
@@ -404,7 +498,7 @@ class Cpu {
 
     dump_registers() {
         let output = "PC " + this._pc.toString(16) + " REG ";
-        for (let register = 0; register < 32; register++) {
+        for (let register = 1; register < this._registers_amount; register++) {
             output += this._get_register(register, false).toString(16) + " ";
         }
         console.log(output);

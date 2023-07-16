@@ -6,9 +6,11 @@ const Memory = require("./memory.js");
 const Bus = require("./bus.js");
 const Cpu = require("./cpu.js");
 
-let program = Buffer.from(fs.readFileSync('program/test.bin'));
+let program_filename = 'program/test.bin';
 
-let ram_base_address = 0x80000000;
+let program = Buffer.from(fs.readFileSync(program_filename));
+
+let ram_base_address = 0x10000000;
 let ram_size = 1024 * 1024 * 1;
 let ram_memory = new Memory(ram_size, ram_base_address);
 
@@ -23,7 +25,7 @@ let bus = new Bus();
 bus.add_peripheral(ram_memory);
 bus.add_peripheral(rom_memory);
 
-let cpu = new Cpu(bus, ram_base_address + ram_size);
+let cpu = new Cpu(bus, ram_base_address + ram_size, true);
 
 async function main() {
     cpu.init();
@@ -31,6 +33,9 @@ async function main() {
 
     while (1) {
         let instruction = cpu.fetch();
+        if (instruction === 0) {
+            break;
+        }
         cpu._pc += 4;
         cpu.execute(instruction);
         cpu.dump_registers();
@@ -43,15 +48,3 @@ async function main() {
 }
 
 main();
-
-//bus.store(0x80000000, 32, 0x12345678);
-//console.log(bus.load(0x80000000, 32));
-
-//cpu.execute(0x00730293); // addi x5, x6, 7
-//cpu.dump_registers();
-
-//cpu.execute(0x00732293); // slti x5, x6, 7
-//cpu.dump_registers();
-
-//cpu.execute(0x40735293); // srai x5, x6, 7
-//cpu.dump_registers();

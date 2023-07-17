@@ -24,7 +24,7 @@ class Bus {
         if (peripheral !== null) {
             return peripheral.load(address, size);
         }
-        throw new Error("Unmapped load address " + address);
+        throw new Error("Unmapped load address " + address.toString(16));
     }
 
     store(address, size, value) {
@@ -32,7 +32,7 @@ class Bus {
         if (peripheral !== null) {
             return peripheral.store(address, size, value);
         }
-        throw new Error("Unmapped store address");
+        throw new Error("Unmapped store address " + address.toString(16));
     }
 }
 

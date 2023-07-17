@@ -73,6 +73,15 @@ class Cpu {
             ADD: 0x00,
             SUB: 0x20,
         };
+
+        this._service_ops = {
+            ECALL: 0x0,
+            EBREAK: 0x1,
+        }
+    }
+
+    _debug(string) {
+        process.stderr.write(string + "\n");
     }
 
     _set_register(register, signed, value) {
@@ -101,7 +110,7 @@ class Cpu {
 
     fetch() {
         let instruction = this._bus.load(this._pc, 32);
-        //console.log("Fetched 0x" + instruction.toString(16));
+        //this._debug("Fetched 0x" + instruction.toString(16));
         return instruction;
     }
 
@@ -187,14 +196,14 @@ class Cpu {
         let target_register = this._rd(instruction);
         let immediate_value = this._imm_U(instruction, false);
         this._set_register(target_register, false, immediate_value);
-        console.log("lui x" + target_register + ", 0x" + (immediate_value >>> 12).toString(16));
+        this._debug("lui x" + target_register + ", 0x" + (immediate_value >>> 12).toString(16));
     }
 
     _execute_op_auipc(instruction) {
         let target_register = this._rd(instruction);
         let immediate_value = this._imm_U(instruction, true);
         this._set_register(target_register, false, this._pc + immediate_value - 4);
-        console.log("auipc x" + target_register + ", " + immediate_value);
+        this._debug("auipc x" + target_register + ", " + immediate_value);
     }
 
     _execute_op_jal(instruction) {
@@ -205,7 +214,7 @@ class Cpu {
         if (this._pc & 0x03) {
             throw new Error("Address misaligned");
         }
-        console.log("jal x" + target_register + ", " + immediate_value);
+        this._debug("jal x" + target_register + ", " + immediate_value);
     }
 
     _execute_op_jalr(instruction) {
@@ -218,7 +227,7 @@ class Cpu {
         if (this._pc & 0x03) {
             throw new Error("Address misaligned");
         }
-        console.log("jalr x" + target_register + ", " + immediate_value);
+        this._debug("jalr x" + target_register + ", " + immediate_value);
     }
 
     _execute_op_branch(instruction) {
@@ -239,27 +248,27 @@ class Cpu {
         switch(funct3) {
             case this._branch_ops.BEQ: // Branch when equal
                 result = (value1u === value2u);
-                console.log("beq x" + rs1 + ", x" + rs2 + ", " + target_offset + " " + (result ? "Y" : "N"));
+                this._debug("beq x" + rs1 + ", x" + rs2 + ", " + target_offset + " " + (result ? "Y" : "N"));
                 break;
             case this._branch_ops.BNE: // Branch when not equal
                 result = (value1u !== value2u);
-                console.log("bne x" + rs1 + ", x" + rs2 + ", " + target_offset + " " + (result ? "Y" : "N"));
+                this._debug("bne x" + rs1 + ", x" + rs2 + ", " + target_offset + " " + (result ? "Y" : "N"));
                 break;
             case this._branch_ops.BLT: // Branch when less than
                 result = (value1s < value2s);
-                console.log("blt x" + rs1 + ", x" + rs2 + ", " + target_offset + " " + (result ? "Y" : "N"));
+                this._debug("blt x" + rs1 + ", x" + rs2 + ", " + target_offset + " " + (result ? "Y" : "N"));
                 break;
             case this._branch_ops.BGE: // Branch when greater than
                 result = (value1s > value2s);
-                console.log("bge x" + rs1 + ", x" + rs2 + ", " + target_offset + " " + (result ? "Y" : "N"));
+                this._debug("bge x" + rs1 + ", x" + rs2 + ", " + target_offset + " " + (result ? "Y" : "N"));
                 break;
             case this._branch_ops.BLTU: // Branch when less than unsigned
                 result = (value1u < value2u);
-                console.log("bltu x" + rs1 + ", x" + rs2 + ", " + target_offset + " " + (result ? "Y" : "N"));
+                this._debug("bltu x" + rs1 + ", x" + rs2 + ", " + target_offset + " " + (result ? "Y" : "N"));
                 break;
             case this._branch_ops.BGEU: // Branch when greater than unsigned
                 result = (value1u > value2u);
-                console.log("bgeu x" + rs1 + ", x" + rs2 + ", " + target_offset + " " + (result ? "Y" : "N"));
+                this._debug("bgeu x" + rs1 + ", x" + rs2 + ", " + target_offset + " " + (result ? "Y" : "N"));
                 break;
             default:
                 throw new Error("Invalid branch instruction. Funct3: " + funct3);
@@ -283,27 +292,27 @@ class Cpu {
         switch(funct3) {
             case this._load_ops.LB:
                 this._set_register(target_register, true, this._bus.load(address, 8));
-                console.log("lb x" + target_register + ", x" + source_register + ", " + immediate_value);
+                this._debug("lb x" + target_register + ", x" + source_register + ", " + immediate_value);
                 break;
             case this._load_ops.LH:
                 this._set_register(target_register, true, this._bus.load(address, 16));
-                console.log("lh x" + target_register + ", x" + source_register + ", " + immediate_value);
+                this._debug("lh x" + target_register + ", x" + source_register + ", " + immediate_value);
                 break;
             case this._load_ops.LW:
                 this._set_register(target_register, true, this._bus.load(address, 32));
-                console.log("lw x" + target_register + ", x" + source_register + ", " + immediate_value);
+                this._debug("lw x" + target_register + ", x" + source_register + ", " + immediate_value);
                 break;
             case this._load_ops.LBU:
                 this._set_register(target_register, false, this._bus.load(address, 8));
-                console.log("lbu x" + target_register + ", x" + source_register + ", " + immediate_value);
+                this._debug("lbu x" + target_register + ", x" + source_register + ", " + immediate_value);
                 break;
             case this._load_ops.LHU:
                 this._set_register(target_register, false, this._bus.load(address, 16));
-                console.log("lhu x" + target_register + ", x" + source_register + ", " + immediate_value);
+                this._debug("lhu x" + target_register + ", x" + source_register + ", " + immediate_value);
                 break;
             case this._load_ops.LWU:
                 this._set_register(target_register, false, this._bus.load(address, 32));
-                console.log("lwu x" + target_register + ", x" + source_register + ", " + immediate_value);
+                this._debug("lwu x" + target_register + ", x" + source_register + ", " + immediate_value);
                 break;
             default:
                throw new Error("Invalid load instruction. Funct3: " + funct3);
@@ -319,12 +328,15 @@ class Cpu {
         switch(funct3) {
             case this._store_ops.SB:
                 this._bus.store(address, 8, value);
+                this._debug("sb " + address.toString(16) + " = " + value.toString(16));
                 break;
             case this._store_ops.SH:
                 this._bus.store(address, 16, value);
+                this._debug("sh " + address.toString(16) + " = " + value.toString(16));
                 break;
             case this._store_ops.SW:
                 this._bus.store(address, 32, value);
+                this._debug("sw " + address.toString(16) + " = " + value.toString(16));
                 break;
             default:
                 throw new Error("Invalid store instruction. Funct3: " + funct3);
@@ -342,42 +354,42 @@ class Cpu {
         switch(funct3) {
             case this._immediate_ops.ADDI: // Add immediate
                 this._set_register(target_register, true, this._get_register(source_register, true) + immediate_value_signed);
-                console.log("addi x" + target_register + ", x" + source_register + ", " + immediate_value_signed);
+                this._debug("addi x" + target_register + ", x" + source_register + ", " + immediate_value_signed);
                 break;
             case this._immediate_ops.SLTI: // Set less than immediate (signed)
                  this._set_register(target_register, true, (this._get_register(source_register, true) < immediate_value_signed) ? 1 : 0);
-                console.log("slti x" + target_register + ", x" + source_register + ", " + immediate_value_signed);
+                this._debug("slti x" + target_register + ", x" + source_register + ", " + immediate_value_signed);
                 break;
             case this._immediate_ops.SLTIU: // Set less than immediate (unsigned)
                 this._set_register(target_register, false, (this._get_register(source_register, false) < immediate_value_unsigned) ? 1 : 0);
-                console.log("sltiu x" + target_register + ", x" + source_register + ", " + immediate_value_unsigned);
+                this._debug("sltiu x" + target_register + ", x" + source_register + ", " + immediate_value_unsigned);
                 break;
             case this._immediate_ops.XORI:
                 this._set_register(target_register, false, this._get_register(source_register, false) ^ immediate_value_unsigned);
-                console.log("xori x" + target_register + ", x" + source_register + ", " + immediate_value_unsigned);
+                this._debug("xori x" + target_register + ", x" + source_register + ", " + immediate_value_unsigned);
                 break;
             case this._immediate_ops.ORI:
                 this._set_register(target_register, false, (this._get_register(source_register, false) | immediate_value_unsigned) ? 1 : 0);
-                console.log("ori x" + target_register + ", x" + source_register + ", " + immediate_value_unsigned);
+                this._debug("ori x" + target_register + ", x" + source_register + ", " + immediate_value_unsigned);
                 break;
             case this._immediate_ops.ANDI:
                 this._set_register(target_register, false, (this._get_register(source_register, false) & immediate_value_unsigned) ? 1 : 0);
-                console.log("andi x" + target_register + ", x" + source_register + ", " + immediate_value_unsigned);
+                this._debug("andi x" + target_register + ", x" + source_register + ", " + immediate_value_unsigned);
                 break;
             case this._immediate_ops.SLLI: // Shift left logical immediate
                 this._set_register(target_register, true, this._get_register(source_register, true) << shift_amount);
-                console.log("slli x" + target_register + ", x" + source_register + ", " + shift_amount);
+                this._debug("slli x" + target_register + ", x" + source_register + ", " + shift_amount);
                 break;
             case this._immediate_ops.SRI:
                 let funct7 = (instruction >> 25) & 0x7f;
                 switch(funct7) {
                     case this._immediate_ops.SRI_SRLI:
                         this._set_register(target_register, true, this._get_register(source_register, true) >> shift_amount);
-                        console.log("srli x" + target_register + ", x" + source_register + ", " + shift_amount);
+                        this._debug("srli x" + target_register + ", x" + source_register + ", " + shift_amount);
                         break;
                     case this._immediate_ops.SRI_SRAI:
                         this._set_register(target_register, true, this._get_register(source_register, true) >> shift_amount);
-                        console.log("srai x" + target_register + ", x" + source_register + ", " + shift_amount);
+                        this._debug("srai x" + target_register + ", x" + source_register + ", " + shift_amount);
                         break;
                 }
             break;
@@ -400,11 +412,11 @@ class Cpu {
                 switch(funct7) {
                     case this._register_ops_addsub.ADD: // Add
                         this._set_register(target_register, true, value1_signed + value2_signed);
-                        console.log("add x" + target_register + ", x" + rs1 + ", x" + rs2);
+                        this._debug("add x" + target_register + ", x" + rs1 + ", x" + rs2);
                         break;
                     case this._register_ops_addsub.SUB: // Subtract
                         this._set_register(target_register, true, value1_signed - value2_signed);
-                        console.log("sub x" + target_register + ", x" + rs1 + ", x" + rs2);
+                        this._debug("sub x" + target_register + ", x" + rs1 + ", x" + rs2);
                         break;
                     default:
                         throw new Error("Invalid addsub register instruction. Funct7: " + funct7);
@@ -413,31 +425,31 @@ class Cpu {
                 break;
             case this._register_ops.SLL: // Shift left logical
                 this._set_register(target_register, false, value1_unsigned << value2_unsigned);
-                console.log("sll x" + target_register + ", x" + rs1 + ", x" + rs2);
+                this._debug("sll x" + target_register + ", x" + rs1 + ", x" + rs2);
                 break;
             case this._register_ops.SLT: // Set less than
                 this._set_register(target_register, false, (value1_signed < value2_signed) ? 1 : 0);
-                console.log("slt x" + target_register + ", x" + rs1 + ", x" + rs2);
+                this._debug("slt x" + target_register + ", x" + rs1 + ", x" + rs2);
                 break;
             case this._register_ops.SLTU: // Set less than unsigned
                 this._set_register(target_register, false, (value1_unsigned < value2_unsigned) ? 1 : 0);
-                console.log("sltu x" + target_register + ", x" + rs1 + ", x" + rs2);
+                this._debug("sltu x" + target_register + ", x" + rs1 + ", x" + rs2);
                 break;
             case this._register_ops.XOR: // Xor
                 this._set_register(target_register, false, value1_unsigned ^ value2_unsigned);
-                console.log("xor x" + target_register + ", x" + rs1 + ", x" + rs2);
+                this._debug("xor x" + target_register + ", x" + rs1 + ", x" + rs2);
                 break;
             case this._register_ops.SR: // Shift right logical
                 this._set_register(target_register, false, value1_unsigned >> value2_unsigned);
-                console.log("sr x" + target_register + ", x" + rs1 + ", x" + rs2);
+                this._debug("sr x" + target_register + ", x" + rs1 + ", x" + rs2);
                 break;
             case this._register_ops.OR: // Shift right arithmetic
                 this._set_register(target_register, true, value1_signed >> value2_signed);
-                console.log("or x" + target_register + ", x" + rs1 + ", x" + rs2);
+                this._debug("or x" + target_register + ", x" + rs1 + ", x" + rs2);
                 break;
             case this._register_ops.AND: // And
                 this._set_register(target_register, false, value1_unsigned & value2_unsigned);
-                console.log("xor x" + target_register + ", x" + rs1 + ", x" + rs2);
+                this._debug("xor x" + target_register + ", x" + rs1 + ", x" + rs2);
                 break;
             default:
                 throw new Error("Invalid register instruction. Funct3: " + funct3);
@@ -445,11 +457,21 @@ class Cpu {
     }
 
     _execute_op_fence(instruction) {
-        throw new Error("Not implemented");
+        this._debug("fence");
     }
 
     _execute_op_service(instruction) {
-        throw new Error("Not implemented");
+        let operation = this._imm_I(instruction, false);
+        switch(operation) {
+            case this._service_ops.ECALL:
+                this._debug("ecall");
+                break;
+            case this._service_ops.EBREAK:
+                this._debug("ebreak");
+                break;
+            default:
+                throw new Error("Invalid service instruction. Operation: " + operation);
+        }
     }
 
     ///...
@@ -501,7 +523,7 @@ class Cpu {
         for (let register = 1; register < this._registers_amount; register++) {
             output += this._get_register(register, false).toString(16) + " ";
         }
-        console.log(output);
+        this._debug(output);
     }
 }
 
